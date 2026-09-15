@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import {
   StyleSheet,
   Text,
@@ -8,6 +9,7 @@ import {
   Pressable,
   TextInput,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, espaco, radius } from './constants/style';
 
 type Item = {
@@ -17,28 +19,42 @@ type Item = {
   comprado: boolean;
 };
 
-const itensIniciais: Item[] = [
-  { id: 1, name: 'Arroz', quantidade: '5 kg', comprado: false },
-  { id: 2, name: 'Feijão', quantidade: '1 kg', comprado: false },
-  { id: 3, name: 'Sabão em pó', quantidade: '', comprado: false },
-  { id: 4, name: 'Café', quantidade: '500 g', comprado: true },
-  { id: 5, name: 'Açúcar', quantidade: '1 kg', comprado: false },
-  { id: 6, name: 'Óleo de soja', quantidade: '900 ml', comprado: false },
-  { id: 7, name: 'Macarrão', quantidade: '500 g', comprado: false },
-  { id: 8, name: 'Leite', quantidade: '2 L', comprado: true },
-  { id: 9, name: 'Ovos', quantidade: '12 un', comprado: false },
-  { id: 10, name: 'Papel higiênico', quantidade: '', comprado: false },
-];
+type Unidade = 'un' | 'kg' | 'cx' | 'pct';
+
+const unidades: Unidade[] = ['un', 'kg', 'cx', 'pct'];
+
+const CHAVE_ARMAZENAMENTO = '@lista-de-compras:itens';
 
 export default function App() {
-  const [itens, setItens] = useState<Item[]>(itensIniciais);
+  const [itens, setItens] = useState<Item[]>([]);
   const [novoItem, setNovoItem] = useState('');
+  const [quantidade, setQuantidade] = useState(1);
+  const [unidade, setUnidade] = useState<Unidade>('un');
+  const [focado, setFocado] = useState(false);
+  const carregadoRef = useRef(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(CHAVE_ARMAZENAMENTO)
+      .then((salvo) => {
+        if (salvo) setItens(JSON.parse(salvo));
+      })
+      .finally(() => {
+        carregadoRef.current = true;
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!carregadoRef.current) return;
+    AsyncStorage.setItem(CHAVE_ARMAZENAMENTO, JSON.stringify(itens));
+  }, [itens]);
 
   const itensPendentes = itens.filter((item) => !item.comprado);
   const itensNoCarrinho = itens.filter((item) => item.comprado);
   const pendentes = itensPendentes.length;
   const noCarrinho = itensNoCarrinho.length;
   const progresso = itens.length === 0 ? 0 : (noCarrinho / itens.length) * 100;
+  const listaVazia = itens.length === 0;
+  const expandido = !listaVazia && (focado || novoItem.trim().length > 0);
 
   function alternarComprado(id: number) {
     setItens((atual) =>
@@ -57,9 +73,11 @@ export default function App() {
     if (!nome) return;
     setItens((atual) => [
       ...atual,
-      { id: Date.now(), name: nome, quantidade: '', comprado: false },
+      { id: Date.now(), name: nome, quantidade: `${quantidade} ${unidade}`, comprado: false },
     ]);
     setNovoItem('');
+    setQuantidade(1);
+    setUnidade('un');
   }
 
   function renderCartao(item: Item) {
@@ -90,46 +108,105 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.rotulo}>MINHA LISTA</Text>
-      <Text style={styles.titulo}>Compras da semana</Text>
-      <Text style={styles.contador}>
-        {pendentes} pendentes · {noCarrinho} no carrinho
-      </Text>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.rotulo}>MINHA LISTA</Text>
+        <Text style={styles.titulo}>Compras da semana</Text>
 
-      <View style={styles.progressoTrilha}>
-        <View style={[styles.progressoPreenchido, { width: `${progresso}%` }]} />
-      </View>
+        {!listaVazia && (
+          <>
+            <Text style={styles.contador}>
+              {pendentes} pendentes · {noCarrinho} no carrinho
+            </Text>
 
-      <ScrollView style={styles.lista} showsVerticalScrollIndicator={false}>
-        {itens.length === 0 && (
-          <Text style={styles.vazio}>Nenhum item na lista</Text>
+            <View style={styles.progressoTrilha}>
+              <View style={[styles.progressoPreenchido, { width: `${progresso}%` }]} />
+            </View>
+          </>
         )}
 
-        {itensPendentes.map(renderCartao)}
-
-        {itensNoCarrinho.length > 0 && (
-          <View style={styles.divisor}>
-            <View style={styles.divisorLinha} />
-            <Text style={styles.divisorTexto}>NO CARRINHO</Text>
-            <View style={styles.divisorLinha} />
+        {listaVazia ? (
+          <View style={styles.vazioContainer}>
+            <View style={styles.vazioIcone}>
+              <View style={styles.vazioIconeCirculo} />
+            </View>
+            <Text style={styles.vazioTitulo}>Nada na lista ainda</Text>
+            <Text style={styles.vazioTexto}>
+              Escreva o primeiro item na barra abaixo. Fica salvo no aparelho, mesmo sem
+              internet.
+            </Text>
           </View>
+        ) : (
+          <ScrollView style={styles.lista} showsVerticalScrollIndicator={false}>
+            {itensPendentes.map(renderCartao)}
+
+            {itensNoCarrinho.length > 0 && (
+              <View style={styles.divisor}>
+                <View style={styles.divisorLinha} />
+                <Text style={styles.divisorTexto}>NO CARRINHO</Text>
+                <View style={styles.divisorLinha} />
+              </View>
+            )}
+
+            {itensNoCarrinho.map(renderCartao)}
+          </ScrollView>
         )}
 
-        {itensNoCarrinho.map(renderCartao)}
-      </ScrollView>
+        <View style={[styles.barraAdicionar, expandido && styles.barraAdicionarFoco]}>
+          <View style={styles.linhaInput}>
+            <TextInput
+              style={styles.input}
+              placeholder="Novo item..."
+              placeholderTextColor={colors.text2}
+              value={novoItem}
+              onChangeText={setNovoItem}
+              onFocus={() => setFocado(true)}
+              onBlur={() => setFocado(false)}
+              onSubmitEditing={adicionarItem}
+              returnKeyType="done"
+            />
+            <Pressable style={styles.botaoAdicionar} onPress={adicionarItem}>
+              <Text style={styles.botaoAdicionarTexto}>+</Text>
+            </Pressable>
+          </View>
 
-      <View style={styles.barraAdicionar}>
-        <TextInput
-          style={styles.input}
-        />
-        <Pressable style={styles.botaoAdicionar} onPress={adicionarItem}>
-          <Text style={styles.botaoAdicionarTexto}>+</Text>
-        </Pressable>
-      </View>
+          {expandido && (
+            <View style={styles.controles}>
+              <View style={styles.stepper}>
+                <Pressable
+                  style={styles.stepperBotao}
+                  onPress={() => setQuantidade((q) => Math.max(1, q - 1))}
+                >
+                  <Text style={styles.stepperBotaoTexto}>–</Text>
+                </Pressable>
+                <Text style={styles.stepperValor}>{quantidade}</Text>
+                <Pressable style={styles.stepperBotao} onPress={() => setQuantidade((q) => q + 1)}>
+                  <Text style={styles.stepperBotaoTexto}>+</Text>
+                </Pressable>
+              </View>
 
-      <StatusBar style="light" />
-    </View>
+              <View style={styles.unidades}>
+                {unidades.map((u) => (
+                  <Pressable
+                    key={u}
+                    style={[styles.unidadeBotao, unidade === u && styles.unidadeBotaoAtivo]}
+                    onPress={() => setUnidade(u)}
+                  >
+                    <Text
+                      style={[styles.unidadeTexto, unidade === u && styles.unidadeTextoAtivo]}
+                    >
+                      {u}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
+
+        <StatusBar style="light" />
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
@@ -140,7 +217,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: espaco.lg,
   },
   rotulo: {
-    marginTop: 60,
+    marginTop: espaco.lg,
     fontSize: 14,
     fontFamily: 'monospace',
     color: colors.acent,
@@ -254,20 +331,110 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.remove,
   },
-  vazio: {
-    fontSize: 16,
+  vazioContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: espaco.md,
+  },
+  vazioIcone: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.cartao,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vazioIconeCirculo: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.total,
+    borderWidth: 2,
+    borderColor: colors.emptyMarker,
+  },
+  vazioTitulo: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  vazioTexto: {
+    fontSize: 15,
     color: colors.text2,
     textAlign: 'center',
-    marginTop: espaco.lg,
+    lineHeight: 21,
+    maxWidth: 280,
   },
   barraAdicionar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: espaco.sm,
     backgroundColor: colors.surface,
     borderRadius: radius.barra,
     padding: espaco.xs,
     marginBottom: espaco.sm,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  barraAdicionarFoco: {
+    borderColor: colors.acent,
+  },
+  linhaInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espaco.sm,
+  },
+  controles: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: espaco.sm,
+    paddingHorizontal: espaco.xs,
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espaco.sm,
+  },
+  stepperBotao: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.unidade,
+    backgroundColor: colors.control,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBotaoTexto: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  stepperValor: {
+    minWidth: 20,
+    textAlign: 'center',
+    fontSize: 17,
+    fontFamily: 'monospace',
+    color: colors.text,
+  },
+  unidades: {
+    flexDirection: 'row',
+    gap: espaco.xs,
+  },
+  unidadeBotao: {
+    paddingHorizontal: espaco.md,
+    height: 36,
+    borderRadius: radius.unidade,
+    backgroundColor: colors.control,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unidadeBotaoAtivo: {
+    backgroundColor: colors.acent,
+  },
+  unidadeTexto: {
+    fontSize: 13,
+    fontFamily: 'monospace',
+    color: colors.text2,
+  },
+  unidadeTextoAtivo: {
+    color: colors.background,
+    fontWeight: '700',
   },
   input: {
     flex: 1,
