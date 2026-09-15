@@ -54,7 +54,7 @@ export default function App() {
   const noCarrinho = itensNoCarrinho.length;
   const progresso = itens.length === 0 ? 0 : (noCarrinho / itens.length) * 100;
   const listaVazia = itens.length === 0;
-  const expandido = !listaVazia && (focado || novoItem.trim().length > 0);
+  const expandido = focado || novoItem.trim().length > 0;
 
   function alternarComprado(id: number) {
     setItens((atual) =>
